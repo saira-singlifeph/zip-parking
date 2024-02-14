@@ -1,4 +1,15 @@
-import { Button, Space, Table, Modal, Select } from 'antd';
+import { 
+  Button, 
+  Space, 
+  Table, 
+  Modal, 
+  Select, 
+  Input, 
+  Form,
+  Col, 
+  Row,
+  Card
+} from 'antd';
 import type { TableProps } from 'antd';
 import './App.css';
 import { useEffect, useState } from 'react';
@@ -42,6 +53,11 @@ interface GeneratedInvoice {
   parkedHours: number;
 }
 
+interface Counts {
+  occupied: number;
+  available: number;
+}
+
 const App = () => {
 
 const [listOfParkingDetails, setlistOfParkingDetails] = useState<ParkingDetailsTableFormat[]>([]);
@@ -49,6 +65,27 @@ const [isCreatingNewParking, setIsCreatingNewParking] = useState(false);
 const [openNewParkingModal, setOpenNewParkingModal] = useState(false);
 const [selectedVehicleType, setSelectedVehicleType] = useState<null|string>(null);
 const [generatedInvoice, setGeneratedInvoice] = useState<null|GeneratedInvoice>(null)
+const [openInvoiceModal, setOpenInvoiceModal] = useState(false);
+const [counts, setCounts] = useState<Counts>({
+  occupied: 0,
+  available: 0
+});
+
+const getCounts = async () => {
+  const counts = await apiService({
+    method: 'GET',
+    endpoint: '/counts'
+  }) as APIResponse;
+
+  if (counts.status === 200) {
+
+    const dataCounts = counts.data as unknown as Counts;
+    setCounts({
+      occupied: dataCounts.occupied,
+      available: dataCounts.available
+    })
+  }
+}
 
 const fetchParkingDetails = async (): Promise<void> => {
   const response = await apiService({ endpoint: '/details', method: 'GET' }) as APIResponse;
@@ -68,7 +105,12 @@ const fetchParkingDetails = async (): Promise<void> => {
       }
     }) as unknown as ParkingDetailsTableFormat[];
     setlistOfParkingDetails(tableData);
+  } else {
+    setlistOfParkingDetails([])
   }
+
+  getCounts();
+  
 };
 
 const newParkingModalToggle = (): void => {
@@ -97,7 +139,7 @@ const createNewParking = async (): Promise<object> => {
     fetchParkingDetails();
   }
   return {}
-}
+};
 
 const createPaymentInvoice = async (data: ParkingDetails): Promise<object> => {
   const response = await apiService({
@@ -111,22 +153,83 @@ const createPaymentInvoice = async (data: ParkingDetails): Promise<object> => {
   if (response.status === 200) {  
     const generatedInvoice = response.data as unknown as GeneratedInvoice;
     setGeneratedInvoice(generatedInvoice);
-    fetchParkingDetails();
+    setOpenInvoiceModal(true)
   }
   return {}
-}
+};
 
+const payInvoicePayment = async (invoice: GeneratedInvoice) => {
+  const processPayment = await apiService({
+    method: "POST",
+    endpoint: "/process-payment",
+    body: {
+      paymentMode: invoice.paymentMode,
+      amountToPay: invoice.amountToPay,
+      referenceNo: invoice.referenceNo,
+      parkedHours: invoice.parkedHours
+    }
+  }) as APIResponse;
+  
+  if (processPayment.status === 200) {
+    setOpenInvoiceModal(false);
+    setGeneratedInvoice(null);
+    fetchParkingDetails();
+  }
+  return processPayment;
+};
+
+const invoiceModalToggle = () => {
+  const value = !openInvoiceModal;
+  setGeneratedInvoice(null);
+  setOpenNewParkingModal(value);
+};
 
 const invoiceModal = () => {
-  return (
-    <Modal
-    open={true}
-    >
-      test
-    </Modal>
-  )
-}
+  if (openInvoiceModal && generatedInvoice) {
+    return (
+      <Modal
+      open={openInvoiceModal}
+      closeIcon={false}
+      centered={true}
+      okText="Paid"
+      onCancel={invoiceModalToggle}
+      onOk={()=>payInvoicePayment(generatedInvoice)}
 
+      >
+        <Form
+           layout="vertical"
+        >
+        <Form.Item
+          label="Parked Hours"
+        >
+          <Input value={generatedInvoice.parkedHours}/>
+        </Form.Item>
+        <Form.Item
+          label="Amount To Pay"
+        >
+          <Input value={generatedInvoice.amountToPay}/>
+        </Form.Item>
+        <Form.Item
+          label="Vehicle Description"
+        >
+          <Input value={generatedInvoice.vehicleDescription}/>
+        </Form.Item>
+        <Form.Item
+          label="Reference No"
+        >
+          <Input value={generatedInvoice.referenceNo}/>
+        </Form.Item>
+        <Form.Item
+          label="Reference No"
+        >
+          <Input value={generatedInvoice.paymentMode}/>
+        </Form.Item>
+      </Form>
+      </Modal>
+    )
+  }
+  
+};
 
 const columns: TableProps<ParkingDetailsTableFormat>['columns'] = [
   {
@@ -181,6 +284,8 @@ const columns: TableProps<ParkingDetailsTableFormat>['columns'] = [
   },
 ];
 
+
+
 useEffect( () => {
   fetchParkingDetails();
 },[]);
@@ -188,14 +293,34 @@ useEffect( () => {
 
   return (
     <div className="App">
-      <Space>
-        <Button type='primary' onClick={newParkingModalToggle}>Create New Parking</Button>
-      </Space>
-      <Table 
-        dataSource={listOfParkingDetails}
-        bordered={true}
-        columns={columns} 
+      <Row gutter={16}>
+        <Col span={8}>
+          <Card title="Occupied" bordered={true}>
+            {counts.occupied}
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card title="Available" bordered={true}>
+          {counts.available}
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card bordered={true}>
+          <Button type='primary' onClick={newParkingModalToggle}>
+                Create New Parking
+            </Button>
+          </Card>
+        </Col>
+    </Row>
+    <Row>
+      <Col>
+        <Table 
+          dataSource={listOfParkingDetails}
+          bordered={true}
+          columns={columns} 
         />
+      </Col>
+    </Row>
        <Modal
         title="Create New Parking Record"
         open={openNewParkingModal}
